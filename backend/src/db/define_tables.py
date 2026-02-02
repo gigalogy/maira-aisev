@@ -77,10 +77,11 @@ class AIModel(Base):
     name = Column(String)
     model_name = Column(String)
     url = Column(String)
-    project_key = Column(String)
-    api_key = Column(String)
+    maira_project_key = Column(String, nullable=True)
+    maira_api_key = Column(String, nullable=True)
+    api_key = Column(String, nullable=True)
     api_request_format = Column(JSON)
-    type = Column(String)  # "target/eval/both"
+    type = Column(String, nullable=False)  # "target", "eval", "both"
     # relationships
     target_evaluation_results = relationship(
         "EvaluationResult", back_populates="target_ai_model", foreign_keys='EvaluationResult.target_ai_model_id')
@@ -89,7 +90,6 @@ class AIModel(Base):
 
     def __repr__(self):
         return f"<AIModel(id={self.id}, name={self.name}, model_name={self.model_name}, url={self.url}, api_request_format={self.api_request_format}, type={self.type})>"
-
 
 class Evaluation(Base):
     __tablename__ = "evaluation"

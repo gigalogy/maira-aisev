@@ -9,8 +9,8 @@ router = APIRouter()
 
 @router.get("/ai_models")
 def list_ai_models(
-    project_key: Optional[str] = Query(None),
-    api_key: Optional[str] = Query(None),
+    maira_project_key: Optional[str] = Query(None),
+    maira_api_key: Optional[str] = Query(None),
     gpt_profile_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -20,17 +20,17 @@ def list_ai_models(
     - With credentials → return filtered models
     """
     logger.info(
-        "list_ai_models: project_key=%s, api_key=%s, gpt_profile_id=%s",
-        project_key,
-        api_key,
+        "list_ai_models: maira_project_key=%s, maira_api_key=%s, gpt_profile_id=%s",
+        maira_project_key,
+        maira_api_key,
         gpt_profile_id,
     )
 
     try:
         models = AIModelManager.get_all_models(
             db=db,
-            project_key=project_key,
-            api_key=api_key,
+            maira_project_key=maira_project_key,
+            maira_api_key=maira_api_key,
             gpt_profile_id=gpt_profile_id,
         )
 
@@ -86,8 +86,10 @@ def get_ai_model(model_id: int, db: Session = Depends(get_db)):
 async def create_ai_model(request: Request, db: Session = Depends(get_db)):
     logger.info("create_ai_model: AIモデル追加リクエストの処理を開始します。")
     body = await request.json()
-    if "projectKey" in body:
-        body["project_key"] = body.pop("projectKey")
+    if "mairaProjectKey" in body:
+        body["maira_project_key"] = body.pop("mairaProjectKey")
+    if "mairaApiKey" in body:
+        body["maira_api_key"] = body.pop("mairaApiKey")
     if "apiKey" in body:
         body["api_key"] = body.pop("apiKey")
     if "promptFormat" in body:
@@ -116,8 +118,10 @@ async def create_ai_model(request: Request, db: Session = Depends(get_db)):
 async def update_ai_model(model_id: int, request: Request, db: Session = Depends(get_db)):
     logger.info(f"update_ai_model: ID={model_id} のAIモデル更新リクエストの処理を開始します。")
     body = await request.json()
-    if "projectKey" in body:
-        body["project_key"] = body.pop("projectKey")
+    if "mairaProjectKey" in body:
+        body["maira_project_key"] = body.pop("mairaProjectKey")
+    if "mairaApiKey" in body:
+        body["maira_api_key"] = body.pop("mairaApiKey")
     if "apiKey" in body:
         body["api_key"] = body.pop("apiKey")
     if "promptFormat" in body:

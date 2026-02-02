@@ -33,6 +33,11 @@ services:
       DB_HOST: $DB_HOST
       DB_PORT: $DB_PORT
       DB_NAME: $DB_NAME
+      MAIRA_API_HOSTNAME: $MAIRA_API_HOSTNAME
+      MAIRA_API_PORT: $MAIRA_API_PORT
+      MAIRA_API_URL: $MAIRA_API_URL
+      OPENAI_API_KEY: $OPENAI_API_KEY
+      OPENAI_API_URL: $OPENAI_API_URL
     working_dir: /app
     volumes:
       - ./backend:/app
@@ -57,7 +62,9 @@ services:
       DB_NAME: $DB_NAME
       MAIRA_API_HOSTNAME: $MAIRA_API_HOSTNAME
       MAIRA_API_PORT: $MAIRA_API_PORT
-      OPEN_AI_API_KEY: $OPEN_AI_API_KEY
+      MAIRA_API_URL: $MAIRA_API_URL
+      OPENAI_API_KEY: $OPENAI_API_KEY
+      OPENAI_API_URL: $OPENAI_API_URL
     working_dir: /app
     volumes:
       - ./backend:/app

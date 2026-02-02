@@ -20,8 +20,9 @@ class MairaAPI(ModelAPI):
         self,
         model_name: str,
         url: str,
-        project_key: str,
-        api_key: str,
+        maira_project_key: str | None = None,
+        maira_api_key: str | None = None,
+        api_key: str | None = None,
         defaults: Dict | None = None,
         **model_args,
     ):
@@ -33,7 +34,8 @@ class MairaAPI(ModelAPI):
             config=model_args.get("config", GenerateConfig()),
         )
 
-        self.project_key = project_key
+        self.maira_project_key = maira_project_key
+        self.maira_api_key = maira_api_key
         self.defaults = defaults or {}
 
     async def generate(
@@ -49,8 +51,8 @@ class MairaAPI(ModelAPI):
 
         # ---- Build headers ----
         headers = {
-            "project-key": self.project_key,
-            "api-key": self.api_key,
+            "project-key": self.maira_project_key,
+            "api-key": self.maira_api_key,
             "accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -103,7 +105,7 @@ class MairaAPI(ModelAPI):
 
         print(
             "MairaAPI Response::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
-            data["detail"]["response"],
+            data.get("detail", {}).get("response"),
         )
 
         # ---- Background task case ----
@@ -154,9 +156,10 @@ class MairaAPI(ModelAPI):
 def register_in_inspect_maira_ai(
     alias: str,
     url: str,
-    project_key: str,
-    api_key: str,
-    defaults: Dict,
+    maira_project_key: str | None = None,
+    maira_api_key: str | None = None,
+    api_key: str | None = None,
+    defaults: Dict | None = None,
 ):
     @modelapi(name=alias)
     def _factory():
@@ -164,7 +167,8 @@ def register_in_inspect_maira_ai(
             return MairaAPI(
                 model_name=model_name,
                 url=url,
-                project_key=project_key,
+                maira_project_key=maira_project_key,
+                maira_api_key=maira_api_key,
                 api_key=api_key,
                 defaults=defaults,
             )

@@ -2,6 +2,7 @@ from datetime import date, datetime
 import importlib.util
 from pathlib import Path
 from typing import Optional
+from src.enum import AIModelName
 from src.db.define_tables import EvaluationResult, Dataset, AIModel, Evaluation, AIModel, UseGSN
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
@@ -10,14 +11,15 @@ from src.gsn.register_dataset_for_gsn import RegisterDatasetForGSN
 from src.manager.quantitative_dataset_manager import QuantitativeDatasetService
 from src.manager.dataset_manager import DatasetManager
 import pandas as pd
+from src.config import config as app_config
 
 
 class EvaluationResultsManager:
     @staticmethod
     def get_all_evaluation_results(
         db: Session,
-        project_key: Optional[str] = None,
-        api_key: Optional[str] = None,
+        maira_project_key: Optional[str] = None,
+        maira_api_key: Optional[str] = None,
         gpt_profile_id: Optional[str] = None,
     ) -> list[EvaluationResult]:
         """
@@ -46,12 +48,11 @@ class EvaluationResultsManager:
 
             filters = []
 
-            if project_key is not None:
-                filters.append(TargetAIModel.project_key == project_key)
+            if maira_project_key is not None:
+                filters.append(TargetAIModel.maira_project_key == maira_project_key)
 
-            if api_key is not None:
-                filters.append(TargetAIModel.api_key == api_key)
-
+            if maira_api_key is not None:
+                filters.append(TargetAIModel.maira_api_key == maira_api_key)
             if gpt_profile_id is not None:
                 filters.append(
                     func.json_extract_path_text(
@@ -302,12 +303,13 @@ class EvaluationResultsManager:
 
         # add model to inspect_ai.
         # NOTE: target_model is for answer generation, eval_model is for scoring
-        if "maira" in target_model.model_name.lower():
+        if AIModelName.maira.value in target_model.model_name.lower():
             # maira
             target_model_alias = register_in_inspect_maira_ai(
-                alias=f"gigalogy-{target_model.model_name}",
+                alias="maira",
                 url=target_model.url,
-                project_key=target_model.project_key,
+                maira_project_key=target_model.maira_project_key,
+                maira_api_key=target_model.maira_api_key,
                 api_key=target_model.api_key,
                 defaults=getattr(target_model, "api_request_format", {}),
             )
@@ -316,16 +318,17 @@ class EvaluationResultsManager:
             target_model_alias = register_in_inspect_ai(
                 model_name=target_model.model_name,
                 api_url=target_model.url,
-                api_key=target_model.api_key,
+                api_key=app_config.openai_api_key if target_model.name == AIModelName.openai.value else target_model.api_key,
             )
         target_model_name = f"{target_model_alias}/{target_model.model_name}"
 
-        if "maira" in eval_model.model_name.lower():
+        if AIModelName.maira.value in eval_model.model_name.lower():
             # maira
             eval_model_alias = register_in_inspect_maira_ai(
-                alias=f"gigalogy-{eval_model.model_name}",
+                alias="maira",
                 url=eval_model.url,
-                project_key=eval_model.project_key,
+                maira_project_key=eval_model.maira_project_key,
+                maira_api_key=eval_model.maira_api_key,
                 api_key=eval_model.api_key,
                 defaults=getattr(eval_model, "api_request_format", {}),
             )
@@ -334,7 +337,7 @@ class EvaluationResultsManager:
             eval_model_alias = register_in_inspect_ai(
                 model_name=eval_model.model_name,
                 api_url=eval_model.url,
-                api_key=eval_model.api_key,
+                api_key=app_config.openai_api_key if eval_model.name == AIModelName.openai.value else eval_model.api_key
             )
         eval_model_name = f"{eval_model_alias}/{eval_model.model_name}"
 

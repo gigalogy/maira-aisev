@@ -1,8 +1,11 @@
 from typing import List, Optional
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from src.helper import enum_error
 from src.db.define_tables import AIModel
 from src.utils.logger import logger
+from src.enum import AIModelName, AIModelType
+from src.config import config as app_config
 
 class AIModelManager:
     """
@@ -18,22 +21,20 @@ class AIModelManager:
         :return: AIModel
         """
         logger.info("add_model: AIモデル追加処理を開始します。")
-        allowed_types = {"target", "eval", "both"}
-        model_type = data.get("type")
-        if model_type is None:
-            model_type = "both"
-        elif model_type not in allowed_types:
-            logger.error(f"add_model: typeが不正です: {model_type}")
-            raise ValueError("type must be one of: target, eval, both")
+        if "name" not in data:
+            raise ValueError("name is required")
+
+        data = AIModelManager.normalize_ai_model_data(data)
         try:
             model = AIModel(
-                name=data.get("name"),
+                name=data["name"],
                 model_name=data.get("model_name"),
                 url=data.get("url"),
-                project_key=data.get("project_key"),
+                maira_project_key=data.get("maira_project_key"),
+                maira_api_key=data.get("maira_api_key"),
                 api_key=data.get("api_key"),
                 api_request_format=data.get("api_request_format"),
-                type=model_type
+                type=data["type"],
             )
             db.add(model)
             db.commit()
@@ -68,8 +69,8 @@ class AIModelManager:
     @staticmethod
     def get_all_models(
         db: Session,
-        project_key: Optional[str] = None,
-        api_key: Optional[str] = None,
+        maira_project_key: Optional[str] = None,
+        maira_api_key: Optional[str] = None,
         gpt_profile_id: Optional[str] = None,
     ) -> List[AIModel]:
         """
@@ -78,9 +79,9 @@ class AIModelManager:
         - If filters are provided → apply them conditionally
         """
         logger.info(
-            "get_all_models: project_key=%s, api_key=%s, gpt_profile_id=%s",
-            project_key,
-            api_key,
+            "get_all_models: maira_project_key=%s, maira_api_key=%s, gpt_profile_id=%s",
+            maira_project_key,
+            maira_api_key,
             gpt_profile_id,
         )
 
@@ -88,12 +89,11 @@ class AIModelManager:
             query = db.query(AIModel)
 
             # Apply filters only if provided
-            if api_key:
-                query = query.filter(AIModel.api_key == api_key)
+            if maira_api_key:
+                query = query.filter(AIModel.maira_api_key == maira_api_key)
 
-            if project_key:
-                query = query.filter(AIModel.project_key == project_key)
-
+            if maira_project_key:
+                query = query.filter(AIModel.maira_project_key == maira_project_key)
             if gpt_profile_id:
                 query = query.filter(
                     func.json_extract_path_text(
@@ -125,6 +125,20 @@ class AIModelManager:
             if not model:
                 logger.info(f"update_model: ID={model_id} のAIモデルは見つかりませんでした。")
                 return None
+
+            # Strip forbidden fields early
+            FORBIDDEN_FIELDS = {"type", "api_key", "url"}
+            data = {k: v for k, v in data.items() if k not in FORBIDDEN_FIELDS}
+
+            # Recompute rules if name changes
+            if "name" in data:
+                base = {
+                    c.name: getattr(model, c.name)
+                    for c in model.__table__.columns
+                }
+                data = AIModelManager.normalize_ai_model_data({**base, **data})
+
+            # Apply normal fields
             for key, value in data.items():
                 if hasattr(model, key):
                     setattr(model, key, value)
@@ -159,3 +173,33 @@ class AIModelManager:
             logger.error(f"delete_model: 削除処理中にエラーが発生しました: {e}")
             db.rollback()
             return False
+
+    @staticmethod
+    def normalize_ai_model_data(data: dict) -> dict:
+        try:
+            name = AIModelName(data["name"])
+        except ValueError:
+            raise enum_error(AIModelName, "name")
+
+        if name == AIModelName.maira:
+            return {
+                **data,
+                "type": AIModelType.target,
+                "url": app_config.maira_api_url,
+            }
+
+        if name == AIModelName.openai:
+            if not app_config.openai_api_key:
+                raise RuntimeError("OPENAI_API_KEY is not configured")
+
+            return {
+                **data,
+                "type": AIModelType.eval,
+                "api_key": None,
+                "url": app_config.openai_api_url,
+            }
+
+        return {
+            **data,
+            "type": AIModelType.both,
+        }

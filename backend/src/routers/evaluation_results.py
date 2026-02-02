@@ -66,8 +66,8 @@ class QuantitativeRequest(BaseModel):
 
 @router.get("/evaluation_results/", response_model=List[EvaluationResultResponse])
 def get_all_evaluation_results(
-    project_key: Optional[str] = Query(None),
-    api_key: Optional[str] = Query(None),
+    maira_project_key: Optional[str] = Query(None),
+    maira_api_key: Optional[str] = Query(None),
     gpt_profile_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
@@ -77,8 +77,8 @@ def get_all_evaluation_results(
     logger.info("get_all_evaluation_results: 全ての評価結果取得処理を開始します。")
     try:
         evaluation_results = EvaluationResultsManager.get_all_evaluation_results(
-            project_key=project_key,
-            api_key=api_key,
+            maira_project_key=maira_project_key,
+            maira_api_key=maira_api_key,
             gpt_profile_id=gpt_profile_id,
             db=db,
         )

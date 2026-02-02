@@ -11,10 +11,12 @@ from typing import List, Dict, Any
 import asyncio
 from dotenv import load_dotenv
 import json
+from src.enum import AIModelName
 from src.inspect.inspect_common import register_in_inspect_ai
 from src.inspect.inspect_maira import register_in_inspect_maira_ai
 import os
 from src.utils.logger import logger
+from src.config import config as app_config
 
 load_dotenv()
 
@@ -60,12 +62,13 @@ def paraphrase_and_score(
             "total_correct": ...
         }
     """
-    if "maira" in model.model_name.lower():
+    if AIModelName.maira.value in model.model_name.lower():
         # Register with inspect_maira
         model_alias = register_in_inspect_maira_ai(
-            alias=f"gigalogy-{model.model_name}",
+            alias="maira",
             url=model.url,
-            project_key=model.project_key,
+            maira_project_key=model.maira_project_key,
+            maira_api_key=model.maira_api_key,
             api_key=model.api_key,
             defaults=getattr(model, "api_request_format", {})
         )
@@ -74,7 +77,7 @@ def paraphrase_and_score(
         model_alias = register_in_inspect_ai(
             model_name=model.model_name,
             api_url=model.url,
-            api_key=model.api_key
+            api_key=app_config.openai_api_key if model.name == AIModelName.openai.value else model.api_key
         )
     model_name = f"{model_alias}/{model.model_name}"
     logger.info(f"paraphrase_and_score: モデル名: {model_name}, スコアラー: {scorer}")

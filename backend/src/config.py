@@ -7,7 +7,9 @@ class ProductionConfig(BaseSettings):
     env_name: str = "PROD"
     maira_api_hostname: str
     maira_api_port: int
-    open_ai_api_key: str
+    maira_api_url: str
+    openai_api_key: str
+    openai_api_url: str 
     default_timeout: int = 180  # seconds
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="allow")
