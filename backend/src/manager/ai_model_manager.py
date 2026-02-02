@@ -181,25 +181,25 @@ class AIModelManager:
         except ValueError:
             raise enum_error(AIModelName, "name")
 
-        if name == AIModelName.maira:
+        if name == AIModelName.maira.value:
             return {
                 **data,
-                "type": AIModelType.target,
+                "type": AIModelType.target.value,
                 "url": app_config.maira_api_url,
             }
 
-        if name == AIModelName.openai:
+        if name == AIModelName.openai.value:
             if not app_config.openai_api_key:
                 raise RuntimeError("OPENAI_API_KEY is not configured")
 
             return {
                 **data,
-                "type": AIModelType.eval,
+                "type": AIModelType.eval.value,
                 "api_key": None,
                 "url": app_config.openai_api_url,
             }
 
         return {
             **data,
-            "type": AIModelType.both,
+            "type": AIModelType.both.value,
         }

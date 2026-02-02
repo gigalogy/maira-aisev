@@ -1,6 +1,5 @@
 import json
 import time
-from fastapi import requests
 from inspect_ai.model import ModelAPI, GenerateConfig, modelapi
 from inspect_ai.model._model_output import ModelOutput, ChatCompletionChoice
 from inspect_ai.model._model_call import ModelCall
@@ -11,8 +10,8 @@ from inspect_ai.model._chat_message import (
 )
 from inspect_ai.tool import ToolInfo, ToolChoice
 from typing import List, Dict
-from ..http import request_processor
-from ..config import config as app_config
+from src.http import request_processor
+from src.config import config as app_config
 
 
 class MairaAPI(ModelAPI):

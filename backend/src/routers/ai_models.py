@@ -36,7 +36,7 @@ def list_ai_models(
 
         if not models:
             logger.info("list_ai_models: AIModels not found.")
-            raise HTTPException(status_code=404, detail="AIModels not found")
+            return {"ai_models": []}
 
         return {
             "ai_models": [
