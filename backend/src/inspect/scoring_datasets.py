@@ -62,7 +62,7 @@ def paraphrase_and_score(
             "total_correct": ...
         }
     """
-    if AIModelName.maira.value in model.model_name.lower():
+    if model.name == AIModelName.maira.value:
         # Register with inspect_maira
         model_alias = register_in_inspect_maira_ai(
             alias="maira",

@@ -303,7 +303,7 @@ class EvaluationResultsManager:
 
         # add model to inspect_ai.
         # NOTE: target_model is for answer generation, eval_model is for scoring
-        if AIModelName.maira.value in target_model.model_name.lower():
+        if target_model.name == AIModelName.maira.value:
             # maira
             target_model_alias = register_in_inspect_maira_ai(
                 alias="maira",
@@ -322,7 +322,7 @@ class EvaluationResultsManager:
             )
         target_model_name = f"{target_model_alias}/{target_model.model_name}"
 
-        if AIModelName.maira.value in eval_model.model_name.lower():
+        if eval_model.name == AIModelName.maira.value:
             # maira
             eval_model_alias = register_in_inspect_maira_ai(
                 alias="maira",

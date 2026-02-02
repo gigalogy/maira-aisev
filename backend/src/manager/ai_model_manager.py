@@ -182,6 +182,15 @@ class AIModelManager:
             raise enum_error(AIModelName, "name")
 
         if name == AIModelName.maira:
+            maira_project_key = data.get("maira_project_key")
+            maira_api_key = data.get("maira_api_key")
+
+            if not maira_project_key or not maira_project_key.strip():
+                raise ValueError("mairaProjectKey is required when name='maira'")
+
+            if not maira_api_key or not maira_api_key.strip():
+                raise ValueError("mairaApiKey is required when name='maira'")
+
             return {
                 **data,
                 "type": AIModelType.target.value,
