@@ -203,6 +203,13 @@ class EvaluationResultsManager:
             return scorer_provider.get_graded_qa_scorer(model=model, prompt=prompt, grade_pattern=grade_pattern)
 
     @staticmethod
+    def get_api_key(model):
+        """Return the model's API key, falling back to global key if OpenAI."""
+        if model.name == EvalModel.openai.value:
+            return model.api_key or app_config.openai_api_key
+        return model.api_key
+
+    @staticmethod
     def register_quantitative_result(
         db: Session, 
         eval_result_id: int, 
@@ -348,7 +355,7 @@ class EvaluationResultsManager:
             target_model_alias = register_in_inspect_ai(
                 model_name=target_model.model_name,
                 api_url=target_model.url,
-                api_key=app_config.openai_api_key if target_model.name == EvalModel.openai.value else target_model.api_key,
+                api_key=EvaluationResultsManager.get_api_key(target_model),
             )
         target_model_name = f"{target_model_alias}/{target_model.model_name}"
 
@@ -366,7 +373,7 @@ class EvaluationResultsManager:
             eval_model_alias = register_in_inspect_ai(
                 model_name=eval_model.model_name,
                 api_url=eval_model.url,
-                api_key=app_config.openai_api_key if eval_model.name == EvalModel.openai.value else eval_model.api_key
+                api_key=EvaluationResultsManager.get_api_key(eval_model),
             )
         eval_model_name = f"{eval_model_alias}/{eval_model.model_name}"
 

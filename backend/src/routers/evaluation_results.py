@@ -169,7 +169,6 @@ def exec_quantitative_evaluation(
     logger.info(
         f"exec_quantitative_evaluation: ID={eval_result_id} の定量評価処理を開始します。")
     try:
-        maira_project_id = db.query(EvaluationResult).filter(EvaluationResult.id == eval_result_id).first().maira_project_id
         dataset_ids = EvaluationResultsManager.get_dataset_ids_from_evaluation_id(
             db, request.evaluation_id)
 
@@ -177,10 +176,17 @@ def exec_quantitative_evaluation(
         use_gsn = EvaluationResultsManager.get_gsn_by_evaluation_id(
             db, request.evaluation_id)
         logger.info(f"exec_quantitative_evaluation: UseGSN={use_gsn}")
-        if not maira_project_id and not dataset_ids and not use_gsn:
+        if not dataset_ids and not use_gsn:
             logger.info("exec_quantitative_evaluation: データセットが見つかりませんでした。")
             raise HTTPException(
                 status_code=404, detail="No datasets found for the evaluation")
+        
+        evaluation_result = db.query(EvaluationResult).filter(
+            EvaluationResult.id == eval_result_id
+        ).first()
+
+        if evaluation_result is None:
+            raise HTTPException(status_code=404, detail=f"EvaluationResult {eval_result_id} not found")
 
         # NOTE: Execute quantitative evaluation in background and return result_id when complete
         result_id = EvaluationResultsManager.register_quantitative_result(
@@ -190,7 +196,7 @@ def exec_quantitative_evaluation(
             request.target_ai_model_id, 
             request.evaluator_ai_model_id, 
             use_gsn,
-            maira_project_id,
+            evaluation_result.maira_project_id,
             request.maira_auth_token,
             target_model_config=request.target_model.model_dump(mode="json") if request.target_model else None,
             eval_model_config=request.evaluator_model.model_dump(mode="json") if request.evaluator_model else None,

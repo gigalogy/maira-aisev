@@ -29,6 +29,7 @@ def request_processor(
         http.client.HTTPSConnection if use_https else http.client.HTTPConnection
     )
 
+    connection = None  # <--- initialize
     try:
         connection = ConnectionCls(
             host,
@@ -48,10 +49,11 @@ def request_processor(
         raise RuntimeError(f"Request failed: {exc}") from exc
 
     finally:
-        try:
-            connection.close()
-        except Exception:
-            pass
+        if connection is not None:  # <--- check before closing
+            try:
+                connection.close()
+            except Exception:
+                pass
 
     if response_headers:
         return body.decode("utf-8", errors="replace"), resp_headers, status
