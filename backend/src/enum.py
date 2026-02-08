@@ -1,8 +1,11 @@
 import enum
 
 
-class AIModelName(enum.Enum):
+class TargetModel(enum.Enum):
     maira = "maira"
+
+
+class EvalModel(enum.Enum):
     openai = "openai"
 
 

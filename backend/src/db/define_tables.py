@@ -77,11 +77,9 @@ class AIModel(Base):
     name = Column(String)
     model_name = Column(String)
     url = Column(String)
-    maira_project_key = Column(String, nullable=True)
-    maira_api_key = Column(String, nullable=True)
-    api_key = Column(String, nullable=True)
+    api_key = Column(String)
     api_request_format = Column(JSON)
-    type = Column(String, nullable=False)  # "target", "eval", "both"
+    type = Column(String)  # "target/eval/both"
     # relationships
     target_evaluation_results = relationship(
         "EvaluationResult", back_populates="target_ai_model", foreign_keys='EvaluationResult.target_ai_model_id')
@@ -89,7 +87,8 @@ class AIModel(Base):
         "EvaluationResult", back_populates="evaluator_ai_model", foreign_keys='EvaluationResult.evaluator_ai_model_id')
 
     def __repr__(self):
-        return f"<AIModel(id={self.id}, name={self.name}, model_name={self.model_name}, url={self.url}, api_request_format={self.api_request_format}, type={self.type})>"
+        return f"<AIModel(id={self.id}, name={self.name}, model_name={self.model_name}, url={self.url}, api_key={self.api_key}, api_request_format={self.api_request_format}, type={self.type})>"
+
 
 class Evaluation(Base):
     __tablename__ = "evaluation"
@@ -111,10 +110,12 @@ class EvaluationResult(Base):
     __tablename__ = "evaluation_result"
     id = Column(Integer, primary_key=True)
     name = Column(String)
+    maira_project_id = Column(String, nullable=True)
+    maira_profile_id = Column(String, nullable=True)
     created_date = Column(DateTime)
     evaluation_id = Column(Integer, ForeignKey("evaluation.id"))
-    target_ai_model_id = Column(Integer, ForeignKey("ai_model.id"))
-    evaluator_ai_model_id = Column(Integer, ForeignKey("ai_model.id"))
+    target_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
+    evaluator_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
     quantitative_results = Column(JSON)
     qualitative_results = Column(JSON)
     quantitative_eval_state = Column(String)  # "running", "done", etc.
@@ -150,7 +151,19 @@ class InitialDataMigrator():
 
     def initialize_10_perspective(self):
 
-        for n in TEN_PERSPECTIVES_JA[:10]:
+        perspectives = [
+            "有害情報の出力制御",
+            "偽誤情報の出力・誘導の防止",
+            "公平性と包摂性",
+            "ハイリスク利用・目的外利用への対処",
+            "プライバシー保護",
+            "セキュリティ確保",
+            "説明可能性",
+            "ロバスト性",
+            "データ品質",
+            "検証可能性"
+        ]
+        for n in perspectives[:10]:
             self.session.add(EvaluationPerspective(perspective_name=n))
         self.session.commit()
 

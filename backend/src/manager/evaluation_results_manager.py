@@ -2,7 +2,7 @@ from datetime import date, datetime
 import importlib.util
 from pathlib import Path
 from typing import Optional
-from src.enum import AIModelName
+from src.enum import TargetModel, EvalModel
 from src.db.define_tables import EvaluationResult, Dataset, AIModel, Evaluation, AIModel, UseGSN
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
@@ -18,9 +18,8 @@ class EvaluationResultsManager:
     @staticmethod
     def get_all_evaluation_results(
         db: Session,
-        maira_project_key: Optional[str] = None,
-        maira_api_key: Optional[str] = None,
-        gpt_profile_id: Optional[str] = None,
+        maira_project_id: Optional[str] = None,
+        maira_profile_id: Optional[str] = None,
     ) -> list[EvaluationResult]:
         """
         Get all EvaluationResults
@@ -36,30 +35,22 @@ class EvaluationResultsManager:
             query = (
                 db.query(EvaluationResult)
                 .join(EvaluationResult.evaluation)
-                .join(
-                    TargetAIModel,
-                    TargetAIModel.id == EvaluationResult.target_ai_model_id,
-                )
-                .join(
-                    EvaluatorAIModel,
-                    EvaluatorAIModel.id == EvaluationResult.evaluator_ai_model_id,
-                )
+                # .join(
+                #     TargetAIModel,
+                #     TargetAIModel.id == EvaluationResult.target_ai_model_id,
+                # )
+                # .join(
+                #     EvaluatorAIModel,
+                #     EvaluatorAIModel.id == EvaluationResult.evaluator_ai_model_id,
+                # )
             )
 
             filters = []
 
-            if maira_project_key is not None:
-                filters.append(TargetAIModel.maira_project_key == maira_project_key)
-
-            if maira_api_key is not None:
-                filters.append(TargetAIModel.maira_api_key == maira_api_key)
-            if gpt_profile_id is not None:
-                filters.append(
-                    func.json_extract_path_text(
-                        TargetAIModel.api_request_format, "gpt_profile_id"
-                    )
-                    == gpt_profile_id
-                )
+            if maira_project_id is not None:
+                filters.append(EvaluationResult.maira_project_id == maira_project_id)
+            if maira_profile_id is not None:
+                filters.append(EvaluationResult.maira_profile_id == maira_profile_id)
 
             if filters:
                 query = query.filter(and_(*filters))
@@ -71,8 +62,10 @@ class EvaluationResultsManager:
                 "name": result.name,
                 "created_date": result.created_date,
                 "evaluation_name": result.evaluation.name,
-                "target_ai_model_name": result.target_ai_model.name,
-                "evaluator_ai_model_name": result.evaluator_ai_model.name,
+                "maira_project_id": result.maira_project_id,
+                "maira_profile_id": result.maira_profile_id,
+                # "target_ai_model_name": result.target_ai_model.name,
+                # "evaluator_ai_model_name": result.evaluator_ai_model.name,
                 "quantitative_results": result.quantitative_results,
                 "qualitative_results": result.qualitative_results,
                 "quantitative_eval_state": result.quantitative_eval_state
@@ -210,9 +203,20 @@ class EvaluationResultsManager:
             return scorer_provider.get_graded_qa_scorer(model=model, prompt=prompt, grade_pattern=grade_pattern)
 
     @staticmethod
-    def register_quantitative_result(db: Session, eval_result_id: int, dataset_ids: list[int], target_model_id: int, eval_model_id: int, use_gsn: UseGSN | None = None) -> int:
+    def register_quantitative_result(
+        db: Session, 
+        eval_result_id: int, 
+        dataset_ids: list[int], 
+        target_model_id: int | None, 
+        eval_model_id: int | None, 
+        use_gsn: UseGSN | None = None,
+        maira_project_id: Optional[str] = None,
+        maira_auth_token: Optional[str] = None,
+        target_model_config: dict | None = None,
+        eval_model_config: dict | None = None,
+    ) -> int:
         """
-        Execute quantitative evaluation by specifying dataset ID and model ID, and register the results to evaluation_result
+        Execute quantitative evaluation by specifying dataset ID and model ID/config, and register the results to evaluation_result
         """
         logger.info(
             f"register_quantitative_result: ID={eval_result_id} の定量評価登録を開始します。")
@@ -223,6 +227,7 @@ class EvaluationResultsManager:
         from inspect_ai.scorer import model_graded_qa
         from src.manager.dataset_manager import DatasetManager
         from src.db.define_tables import AIModel, EvaluationResult, DatasetCustomMapping
+        from src.enum import TargetModel, EvalModel
 
         logger.info("Call: register_quantitative_result")
 
@@ -267,17 +272,43 @@ class EvaluationResultsManager:
             db.commit()
             return eval_result.id
 
-        target_model = db.query(AIModel).filter_by(id=target_model_id).first()
-        if target_model is None:
-            logger.error(
-                "register_quantitative_result: Target AIModelが見つかりません。")
-            raise ValueError("Target AIModel not found")
+        # Resolve target model: use inline config if provided, else fetch by ID
+        if target_model_config:
+            # Use inline config and merge runtime keys
+            class InlineAIModel:
+                def __init__(self, cfg, api_key=None):
+                    self.name = cfg.get('name')
+                    self.model_name = cfg.get('model_name')
+                    self.url = cfg.get('url')
+                    self.api_key = api_key
+                    self.api_request_format = cfg.get('api_request_format', {})
+            target_model = InlineAIModel(target_model_config)
+        else:
+            # Fetch from DB by ID
+            target_model = db.query(AIModel).filter_by(id=target_model_id).first()
+            if target_model is None:
+                logger.error(
+                    "register_quantitative_result: Target AIModelが見つかりません。")
+                raise ValueError("Target AIModel not found")
 
-        eval_model = db.query(AIModel).filter_by(id=eval_model_id).first()
-        if eval_model is None:
-            logger.error(
-                "register_quantitative_result: Evaluation AIModelが見つかりません。")
-            raise ValueError("Evaluation AIModel not found")
+        # Resolve evaluator model: use inline config if provided, else fetch by ID
+        if eval_model_config:
+            # Use inline config and merge runtime keys
+            class InlineAIModel:
+                def __init__(self, cfg, api_key=None):
+                    self.name = cfg.get('name')
+                    self.model_name = cfg.get('model_name')
+                    self.url = cfg.get('url')
+                    self.api_key = api_key
+                    self.api_request_format = cfg.get('api_request_format', {})
+            eval_model = InlineAIModel(eval_model_config)
+        else:
+            # Fetch from DB by ID
+            eval_model = db.query(AIModel).filter_by(id=eval_model_id).first()
+            if eval_model is None:
+                logger.error(
+                    "register_quantitative_result: Evaluation AIModelが見つかりません。")
+                raise ValueError("Evaluation AIModel not found")
 
         # Dataset data_content is binary serialized with pickle, so load it to get DataFrame
         # TODO: Currently only df with text is allowed, but multimodal support is planned for the future
@@ -303,14 +334,13 @@ class EvaluationResultsManager:
 
         # add model to inspect_ai.
         # NOTE: target_model is for answer generation, eval_model is for scoring
-        if target_model.name == AIModelName.maira.value:
+        if target_model.name == TargetModel.maira.value:
             # maira
             target_model_alias = register_in_inspect_maira_ai(
                 alias="maira",
                 url=target_model.url,
-                maira_project_key=target_model.maira_project_key,
-                maira_api_key=target_model.maira_api_key,
-                api_key=target_model.api_key,
+                maira_project_id=maira_project_id,
+                maira_auth_token=maira_auth_token,
                 defaults=getattr(target_model, "api_request_format", {}),
             )
         else:
@@ -318,18 +348,17 @@ class EvaluationResultsManager:
             target_model_alias = register_in_inspect_ai(
                 model_name=target_model.model_name,
                 api_url=target_model.url,
-                api_key=app_config.openai_api_key if target_model.name == AIModelName.openai.value else target_model.api_key,
+                api_key=app_config.openai_api_key if target_model.name == EvalModel.openai.value else target_model.api_key,
             )
         target_model_name = f"{target_model_alias}/{target_model.model_name}"
 
-        if eval_model.name == AIModelName.maira.value:
+        if eval_model.name == TargetModel.maira.value:
             # maira
             eval_model_alias = register_in_inspect_maira_ai(
                 alias="maira",
                 url=eval_model.url,
-                maira_project_key=eval_model.maira_project_key,
-                maira_api_key=eval_model.maira_api_key,
-                api_key=eval_model.api_key,
+                maira_project_id=maira_project_id,
+                maira_auth_token=maira_auth_token,
                 defaults=getattr(eval_model, "api_request_format", {}),
             )
         else:
@@ -337,7 +366,7 @@ class EvaluationResultsManager:
             eval_model_alias = register_in_inspect_ai(
                 model_name=eval_model.model_name,
                 api_url=eval_model.url,
-                api_key=app_config.openai_api_key if eval_model.name == AIModelName.openai.value else eval_model.api_key
+                api_key=app_config.openai_api_key if eval_model.name == EvalModel.openai.value else eval_model.api_key
             )
         eval_model_name = f"{eval_model_alias}/{eval_model.model_name}"
 

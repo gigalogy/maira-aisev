@@ -19,8 +19,8 @@ class MairaAPI(ModelAPI):
         self,
         model_name: str,
         url: str,
-        maira_project_key: str | None = None,
-        maira_api_key: str | None = None,
+        maira_project_id: str | None = None,
+        maira_auth_token: str | None = None,
         api_key: str | None = None,
         defaults: Dict | None = None,
         **model_args,
@@ -33,8 +33,8 @@ class MairaAPI(ModelAPI):
             config=model_args.get("config", GenerateConfig()),
         )
 
-        self.maira_project_key = maira_project_key
-        self.maira_api_key = maira_api_key
+        self.maira_project_id = maira_project_id
+        self.maira_auth_token = maira_auth_token
         self.defaults = defaults or {}
 
     async def generate(
@@ -50,8 +50,8 @@ class MairaAPI(ModelAPI):
 
         # ---- Build headers ----
         headers = {
-            "project-key": self.maira_project_key,
-            "api-key": self.maira_api_key,
+            "project-id": self.maira_project_id if self.maira_project_id else "",
+            "auth-token": self.maira_auth_token if self.maira_auth_token else "",
             "accept": "application/json",
             "Content-Type": "application/json",
         }
@@ -155,8 +155,8 @@ class MairaAPI(ModelAPI):
 def register_in_inspect_maira_ai(
     alias: str,
     url: str,
-    maira_project_key: str | None = None,
-    maira_api_key: str | None = None,
+    maira_project_id: str | None = None,
+    maira_auth_token: str | None = None,
     api_key: str | None = None,
     defaults: Dict | None = None,
 ):
@@ -166,8 +166,8 @@ def register_in_inspect_maira_ai(
             return MairaAPI(
                 model_name=model_name,
                 url=url,
-                maira_project_key=maira_project_key,
-                maira_api_key=maira_api_key,
+                maira_project_id=maira_project_id,
+                maira_auth_token=maira_auth_token,
                 api_key=api_key,
                 defaults=defaults,
             )

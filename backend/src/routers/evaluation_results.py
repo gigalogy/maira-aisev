@@ -1,14 +1,37 @@
+from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.db.define_tables import EvaluationResult
 from src.manager.evaluation_results_manager import EvaluationResultsManager
 from src.db.session import get_db
-from pydantic import BaseModel
-from typing import List, Optional, Any
-from datetime import date
+from pydantic import BaseModel, model_validator
+from typing import List, Optional, Any, Dict
+from src.config import config as app_config
 from src.utils.logger import logger
+from src.enum import TargetModel, EvalModel
 
 router = APIRouter()
+
+
+class InlineAIModelConfig(BaseModel):
+    name: TargetModel | EvalModel
+    model_name: str
+    url: Optional[str] = None
+    api_key: Optional[str] = None
+    api_request_format: Optional[Dict[str, Any]] = None
+    
+    @model_validator(mode="after")
+    def set_defaults(self):
+        # TARGET MODEL
+        if self.name == TargetModel.maira:
+            self.url = self.url or app_config.maira_api_url
+
+        # EVALUATOR MODEL
+        if self.name == EvalModel.openai:
+            self.url = self.url or app_config.openai_api_url
+            self.api_key = self.api_key or app_config.openai_api_key
+
+        return self
 
 
 class QualitativeResultItem(BaseModel):
@@ -35,8 +58,10 @@ class QuantitativeResultRequest(BaseModel):
 class EvaluationResultCreateRequest(BaseModel):
     name: str
     evaluation_id: int
-    target_ai_model_id: int
-    evaluator_ai_model_id: int
+    maira_project_id: Optional[str] = None
+    maira_profile_id: Optional[str] = None
+    target_ai_model_id: Optional[int] = None
+    evaluator_ai_model_id: Optional[int] = None
     quantitative_eval_state: Optional[str] = None
     quantitative_results: Optional[Any] = None
     qualitative_results: Optional[Any] = None
@@ -48,8 +73,10 @@ class EvaluationResultResponse(BaseModel):
     name: str
     created_date: str
     evaluation_name: str
-    target_ai_model_name: str
-    evaluator_ai_model_name: str
+    maira_project_id: Optional[str] = None
+    maira_profile_id: Optional[str] = None
+    target_ai_model_name: Optional[str] = None
+    evaluator_ai_model_name: Optional[str] = None
     quantitative_results: Optional[Any] = None
     qualitative_results: Optional[Any] = None
     quantitative_eval_state: Optional[str] = "running"
@@ -60,15 +87,17 @@ class EvaluationResultResponse(BaseModel):
 
 class QuantitativeRequest(BaseModel):
     evaluation_id: int
-    target_ai_model_id: int
-    evaluator_ai_model_id: int
+    maira_auth_token: Optional[str] = None
+    target_ai_model_id: Optional[int] = None
+    evaluator_ai_model_id: Optional[int] = None
+    target_model: Optional[InlineAIModelConfig] = None
+    evaluator_model: Optional[InlineAIModelConfig] = None
 
 
 @router.get("/evaluation_results/", response_model=List[EvaluationResultResponse])
 def get_all_evaluation_results(
-    maira_project_key: Optional[str] = Query(None),
-    maira_api_key: Optional[str] = Query(None),
-    gpt_profile_id: Optional[str] = Query(None),
+    maira_project_id: Optional[UUID] = Query(None),
+    maira_profile_id: Optional[UUID] = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -77,15 +106,10 @@ def get_all_evaluation_results(
     logger.info("get_all_evaluation_results: 全ての評価結果取得処理を開始します。")
     try:
         evaluation_results = EvaluationResultsManager.get_all_evaluation_results(
-            maira_project_key=maira_project_key,
-            maira_api_key=maira_api_key,
-            gpt_profile_id=gpt_profile_id,
+            maira_project_id=maira_project_id,
+            maira_profile_id=maira_profile_id,
             db=db,
         )
-        if not evaluation_results:
-            logger.info("get_all_evaluation_results: 評価結果が見つかりませんでした。")
-            raise HTTPException(
-                status_code=404, detail="No evaluation results found")
         # Convert to YYYY-MM-DD hh:mm:ss format from created_date
         for result in evaluation_results:
             result["created_date"] = result["created_date"].strftime(
@@ -111,6 +135,8 @@ def create_evaluation_result(request: EvaluationResultCreateRequest, db: Session
     eval_result = EvaluationResult(
         name=request.name,
         evaluation_id=request.evaluation_id,
+        maira_project_id=request.maira_project_id,
+        maira_profile_id=request.maira_profile_id,
         target_ai_model_id=request.target_ai_model_id,
         evaluator_ai_model_id=request.evaluator_ai_model_id,
         quantitative_eval_state="running",
@@ -136,14 +162,14 @@ def exec_quantitative_evaluation(
     db: Session = Depends(get_db)
 ):
     """
-    request must contains:
-        evaluation_id: int
-        target_ai_model_id: int
-        evaluator_ai_model_id: int
+    request must contain either:
+        - evaluation_id, target_ai_model_id, evaluator_ai_model_id (IDs)
+        - evaluation_id, target_model, evaluator_model (inline configs)
     """
     logger.info(
         f"exec_quantitative_evaluation: ID={eval_result_id} の定量評価処理を開始します。")
     try:
+        maira_project_id = db.query(EvaluationResult).filter(EvaluationResult.id == eval_result_id).first().maira_project_id
         dataset_ids = EvaluationResultsManager.get_dataset_ids_from_evaluation_id(
             db, request.evaluation_id)
 
@@ -151,14 +177,24 @@ def exec_quantitative_evaluation(
         use_gsn = EvaluationResultsManager.get_gsn_by_evaluation_id(
             db, request.evaluation_id)
         logger.info(f"exec_quantitative_evaluation: UseGSN={use_gsn}")
-        if not dataset_ids and not use_gsn:
+        if not maira_project_id and not dataset_ids and not use_gsn:
             logger.info("exec_quantitative_evaluation: データセットが見つかりませんでした。")
             raise HTTPException(
                 status_code=404, detail="No datasets found for the evaluation")
 
         # NOTE: Execute quantitative evaluation in background and return result_id when complete
         result_id = EvaluationResultsManager.register_quantitative_result(
-            db, eval_result_id, dataset_ids, request.target_ai_model_id, request.evaluator_ai_model_id, use_gsn)
+            db, 
+            eval_result_id, 
+            dataset_ids, 
+            request.target_ai_model_id, 
+            request.evaluator_ai_model_id, 
+            use_gsn,
+            maira_project_id,
+            request.maira_auth_token,
+            target_model_config=request.target_model.model_dump(mode="json") if request.target_model else None,
+            eval_model_config=request.evaluator_model.model_dump(mode="json") if request.evaluator_model else None,
+        )
 
         logger.info(
             f"exec_quantitative_evaluation: 定量評価(ID={result_id}) の登録が完了しました。")
