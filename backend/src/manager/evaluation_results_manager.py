@@ -1,7 +1,10 @@
+import uuid
 from datetime import date, datetime
 import importlib.util
 from pathlib import Path
 from typing import Optional
+
+from fastapi import HTTPException
 from src.enum import TargetModel, EvalModel
 from src.db.define_tables import EvaluationResult, Dataset, AIModel, Evaluation, AIModel, UseGSN
 from sqlalchemy.orm import Session
@@ -287,7 +290,7 @@ class EvaluationResultsManager:
                     self.name = cfg.get('name')
                     self.model_name = cfg.get('model_name')
                     self.url = cfg.get('url')
-                    self.api_key = api_key
+                    self.api_key = cfg.get('api_key') or api_key
                     self.api_request_format = cfg.get('api_request_format', {})
             target_model = InlineAIModel(target_model_config)
         else:
@@ -306,7 +309,7 @@ class EvaluationResultsManager:
                     self.name = cfg.get('name')
                     self.model_name = cfg.get('model_name')
                     self.url = cfg.get('url')
-                    self.api_key = api_key
+                    self.api_key = cfg.get('api_key') or api_key
                     self.api_request_format = cfg.get('api_request_format', {})
             eval_model = InlineAIModel(eval_model_config)
         else:
@@ -359,7 +362,7 @@ class EvaluationResultsManager:
             )
         target_model_name = f"{target_model_alias}/{target_model.model_name}"
 
-        if eval_model.name == TargetModel.maira.value:
+        if eval_model.name == EvalModel.maira.value:
             # maira
             eval_model_alias = register_in_inspect_maira_ai(
                 alias="maira",

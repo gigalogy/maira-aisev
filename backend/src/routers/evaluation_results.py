@@ -1,4 +1,3 @@
-from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.db.define_tables import EvaluationResult
@@ -9,6 +8,7 @@ from typing import List, Optional, Any, Dict
 from src.config import config as app_config
 from src.utils.logger import logger
 from src.enum import TargetModel, EvalModel
+from src.helper import validate_uuid
 
 router = APIRouter()
 
@@ -96,8 +96,8 @@ class QuantitativeRequest(BaseModel):
 
 @router.get("/evaluation_results/", response_model=List[EvaluationResultResponse])
 def get_all_evaluation_results(
-    maira_project_id: Optional[UUID] = Query(None),
-    maira_profile_id: Optional[UUID] = Query(None),
+    maira_project_id: Optional[str] = Query(None),
+    maira_profile_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -105,6 +105,8 @@ def get_all_evaluation_results(
     """
     logger.info("get_all_evaluation_results: 全ての評価結果取得処理を開始します。")
     try:
+        maira_project_id = validate_uuid(maira_project_id, "maira_project_id")
+        maira_profile_id = validate_uuid(maira_profile_id, "maira_profile_id")
         evaluation_results = EvaluationResultsManager.get_all_evaluation_results(
             maira_project_id=maira_project_id,
             maira_profile_id=maira_profile_id,

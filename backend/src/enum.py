@@ -7,6 +7,7 @@ class TargetModel(enum.Enum):
 
 class EvalModel(enum.Enum):
     openai = "openai"
+    maira = "maira"
 
 
 class AIModelType(enum.Enum):
