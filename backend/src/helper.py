@@ -16,3 +16,9 @@ def validate_uuid(value: Optional[str], name: str) -> Optional[str]:
         return value
     except ValueError:
         raise HTTPException(status_code=422, detail=f"{name} must be a valid UUID")
+
+
+class InvalidEvaluationConfiguration(Exception):
+    """Raised when evaluation configuration is invalid (e.g., profile mismatch)."""
+
+    pass

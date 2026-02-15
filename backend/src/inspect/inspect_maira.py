@@ -12,6 +12,7 @@ from inspect_ai.tool import ToolInfo, ToolChoice
 from typing import List, Dict
 from src.http import request_processor
 from src.config import config as app_config
+from src.utils.logger import logger
 
 
 class MairaAPI(ModelAPI):
@@ -68,9 +69,8 @@ class MairaAPI(ModelAPI):
         for k, v in self.defaults.items():
             payload.setdefault(k, v)
 
-        print(
-            "MairaAPI Payload::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
-            payload,
+        logger.info(
+            f"Calling Maira API with payload::::::::::::::: {payload} -------- and headers::::::::::::::: {headers}"
         )
 
         start_time = time.time()
@@ -101,10 +101,9 @@ class MairaAPI(ModelAPI):
             data = {"detail": {"response": ""}}  # fallback
 
         elapsed_time = time.time() - start_time
-
-        print(
-            "MairaAPI Response::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::",
-            data.get("detail", {}).get("response"),
+        
+        logger.info(
+            f"Maira API call completed in {elapsed_time:.2f} seconds with response::::::::::::::::: {data.get('detail', {}).get('response', '')}"
         )
 
         # ---- Background task case ----

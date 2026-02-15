@@ -15,6 +15,7 @@ from src.manager.quantitative_dataset_manager import QuantitativeDatasetService
 from src.manager.dataset_manager import DatasetManager
 import pandas as pd
 from src.config import config as app_config
+from src.helper import InvalidEvaluationConfiguration
 
 
 class EvaluationResultsManager:
@@ -345,6 +346,26 @@ class EvaluationResultsManager:
         # add model to inspect_ai.
         # NOTE: target_model is for answer generation, eval_model is for scoring
         if target_model.name == TargetModel.maira.value:
+            # Ensure api_request_format exists
+            if not getattr(target_model, "api_request_format", None):
+                target_model.api_request_format = {}
+
+            model_profile_id = target_model.api_request_format.get("gpt_profile_id")
+            result_profile_id = eval_result.maira_profile_id
+
+            # If model config does not contain maira_profile_id → inject from eval_result
+            if not model_profile_id:
+                if not result_profile_id:
+                    raise InvalidEvaluationConfiguration("maira_profile_id is required but missing in both model config and evaluation result")
+
+                target_model.api_request_format["gpt_profile_id"] = result_profile_id
+            # If both exist but mismatch → error
+            elif result_profile_id and model_profile_id != result_profile_id:
+                raise InvalidEvaluationConfiguration(
+                    f"maira_profile_id mismatch: "
+                    f"evaluation_result={result_profile_id}, "
+                    f"model_config={model_profile_id}"
+                )
             # maira
             target_model_alias = register_in_inspect_maira_ai(
                 alias="maira",

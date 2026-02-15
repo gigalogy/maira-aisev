@@ -8,7 +8,7 @@ from typing import List, Optional, Any, Dict
 from src.config import config as app_config
 from src.utils.logger import logger
 from src.enum import TargetModel, EvalModel
-from src.helper import validate_uuid
+from src.helper import InvalidEvaluationConfiguration, validate_uuid
 
 router = APIRouter()
 
@@ -207,6 +207,9 @@ def exec_quantitative_evaluation(
         logger.info(
             f"exec_quantitative_evaluation: 定量評価(ID={result_id}) の登録が完了しました。")
         return result_id
+    except InvalidEvaluationConfiguration as e:
+        logger.error(f"exec_quantitative_evaluation: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
     except ValueError:
         logger.error(
             "exec_quantitative_evaluation: 評価用データセットまたはモデルが見つかりませんでした。")
