@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import HTTPException
-from src.enum import TargetModel, EvalModel
+from src.constants.perspectives import normalize_perspective_sequence
+from src.enum import TargetLanguage, TargetModel, EvalModel
 from src.db.define_tables import EvaluationResult, Dataset, AIModel, Evaluation, AIModel, UseGSN
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func
@@ -495,7 +496,7 @@ class EvaluationResultsManager:
         return dataset_ids
 
     @staticmethod
-    def get_result_detail(db: Session, eval_result_id: int, score_filter: Optional[Literal[0, 1, "both"]] = "both") -> dict:
+    def get_result_detail(db: Session, eval_result_id: int, score_filter: Optional[Literal[0, 1]] = None, target_language: TargetLanguage = TargetLanguage.japanese) -> dict:
         """
         Get details of the specified evaluation result ID and return quantitative_results in an easy-to-view format.
         Also return the question and answer content of qualitative_results.
@@ -569,7 +570,7 @@ class EvaluationResultsManager:
                     if not gsn_perspectives:
                         choices = sample.get("output", {}).get("choices", [{}])
                         detail = {
-                            "perspective": [perspective],
+                            "perspective": [normalize_perspective_sequence([perspective], target_language.value) if perspective else ""],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             "answer": (choices[0].get("message", {}).get("content", "") if choices else ""),
@@ -579,7 +580,10 @@ class EvaluationResultsManager:
                         }
                         if not choices:
                             logger.error(f"sample: {sample} の choices が空です。")
-                        details.append(detail)
+                        if score_filter is None:
+                            details.append(detail)
+                        elif detail["score"] == score_filter:
+                            details.append(detail)
 
                     # NOTE: gsn route
                     # Process each GSN perspective for this sample
@@ -600,7 +604,7 @@ class EvaluationResultsManager:
                             "gsnLeaf": [gsn_detail.gsn_leaf if gsn_detail else None],
                             "scoreRate": [gsn_detail.score_rate if gsn_detail else 1.0],
                             "gsnName": [gsn_id],
-                            "perspective": [perspective],
+                            "perspective": [normalize_perspective_sequence([perspective], target_language.value) if gsn_detail else ""],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             # "answer": (sample.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", "") if sample.get("output") else ""),
@@ -611,11 +615,14 @@ class EvaluationResultsManager:
                         }
                         if not choices:
                             logger.error(f"sample: {sample} の choices が空です。")
-                        if score_filter == "both" or score_filter is None:
+                        if score_filter is None:
                             details.append(detail)
                         elif detail["score"] == score_filter:
                             details.append(detail)
-                perspective_map.setdefault(perspective, []).append(details)
+                normalized_perspective = normalize_perspective_sequence(
+                    [perspective], target_language.value
+                )[0] if perspective else None
+                perspective_map.setdefault(normalized_perspective, []).append(details)
 
         # Qualitative evaluation (qualitative_results)
         answer_score_map = {

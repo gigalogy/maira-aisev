@@ -7,7 +7,7 @@ from pydantic import BaseModel, model_validator
 from typing import List, Literal, Optional, Any, Dict
 from src.config import config as app_config
 from src.utils.logger import logger
-from src.enum import TargetModel, EvalModel
+from src.enum import TargetModel, EvalModel, TargetLanguage
 from src.helper import InvalidEvaluationConfiguration, validate_uuid
 
 router = APIRouter()
@@ -281,16 +281,21 @@ def get_10perspective_scores(eval_result_id: int, db: Session = Depends(get_db))
 
 
 @router.get("/evaluation_results/{eval_result_id}/detail", response_model=Any)
-def get_evaluation_result_detail(eval_result_id: int, score_filter: Optional[Literal["0", "1", "both"]] = "both", db: Session = Depends(get_db)):
+def get_evaluation_result_detail(
+    eval_result_id: int,
+    score_filter: Optional[Literal["0", "1"]] = None,
+    target_language: TargetLanguage = TargetLanguage.japanese,
+    db: Session = Depends(get_db)
+):
     """
     Get detailed information for the specified evaluation result ID and return quantitative_results and qualitative_results in a readable format
     """
     logger.info(
         f"get_evaluation_result_detail: ID={eval_result_id} の詳細取得処理を開始します。")
-    if score_filter in ("0", "1"):
+    if score_filter is not None:
         score_filter = int(score_filter)
     try:
-        detail = EvaluationResultsManager.get_result_detail(db, eval_result_id, score_filter=score_filter)
+        detail = EvaluationResultsManager.get_result_detail(db, eval_result_id, score_filter=score_filter, target_language=target_language)
         logger.info("get_evaluation_result_detail: 詳細取得が完了しました。")
         return detail
     except ValueError:

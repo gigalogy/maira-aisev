@@ -14,3 +14,8 @@ class AIModelType(enum.Enum):
     target = "target"
     eval = "eval"
     both = "both"
+
+
+class TargetLanguage(enum.Enum):
+    japanese = "ja"
+    english = "en"
