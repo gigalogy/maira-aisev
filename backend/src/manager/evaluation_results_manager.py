@@ -2,7 +2,7 @@ import uuid
 from datetime import date, datetime
 import importlib.util
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import HTTPException
 from src.enum import TargetModel, EvalModel
@@ -495,7 +495,7 @@ class EvaluationResultsManager:
         return dataset_ids
 
     @staticmethod
-    def get_result_detail(db: Session, eval_result_id: int) -> dict:
+    def get_result_detail(db: Session, eval_result_id: int, score_filter: Optional[Literal[0, 1, "both"]] = "both") -> dict:
         """
         Get details of the specified evaluation result ID and return quantitative_results in an easy-to-view format.
         Also return the question and answer content of qualitative_results.
@@ -611,7 +611,10 @@ class EvaluationResultsManager:
                         }
                         if not choices:
                             logger.error(f"sample: {sample} の choices が空です。")
-                        details.append(detail)
+                        if score_filter == "both" or score_filter is None:
+                            details.append(detail)
+                        elif detail["score"] == score_filter:
+                            details.append(detail)
                 perspective_map.setdefault(perspective, []).append(details)
 
         # Qualitative evaluation (qualitative_results)
