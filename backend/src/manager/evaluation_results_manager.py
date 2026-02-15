@@ -570,7 +570,7 @@ class EvaluationResultsManager:
                     if not gsn_perspectives:
                         choices = sample.get("output", {}).get("choices", [{}])
                         detail = {
-                            "perspective": [normalize_perspective_sequence([perspective], target_language.value) if perspective else ""],
+                            "perspective": normalize_perspective_sequence([perspective], target_language.value) if perspective else [perspective],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             "answer": (choices[0].get("message", {}).get("content", "") if choices else ""),
@@ -604,7 +604,7 @@ class EvaluationResultsManager:
                             "gsnLeaf": [gsn_detail.gsn_leaf if gsn_detail else None],
                             "scoreRate": [gsn_detail.score_rate if gsn_detail else 1.0],
                             "gsnName": [gsn_id],
-                            "perspective": [normalize_perspective_sequence([perspective], target_language.value) if gsn_detail else ""],
+                            "perspective": normalize_perspective_sequence([perspective], target_language.value) if perspective else [perspective],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             # "answer": (sample.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", "") if sample.get("output") else ""),
