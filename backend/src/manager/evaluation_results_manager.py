@@ -622,7 +622,7 @@ class EvaluationResultsManager:
                 normalized_perspective = normalize_perspective_sequence(
                     [perspective], target_language.value
                 )[0] if perspective else None
-                perspective_map.setdefault(normalized_perspective, []).append(details)
+                perspective_map.setdefault(normalized_perspective, []).extend(details)
 
         # Qualitative evaluation (qualitative_results)
         answer_score_map = {
