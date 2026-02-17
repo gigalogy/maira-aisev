@@ -395,11 +395,19 @@ def get_combined_evaluation_detail(
                 "results": [],
             }
 
+            def _first_or_default(value, default=""):
+                """Return the first element if list, else the value itself, else default."""
+                if isinstance(value, list):
+                    return value[0] if value else default
+                if value is None:
+                    return default
+                return value
+
             for result in results:
                 result_data = {
-                    "subCategory": result.get("secondGoal", [""])[0],
-                    "evaluationContent": result.get("gsnLeaf", [""])[0],
-                    "scoreRate": result.get("scoreRate", [0])[0],
+                    "subCategory": _first_or_default(result.get("secondGoal", "")),
+                    "evaluationContent": _first_or_default(result.get("gsnLeaf", "")),
+                    "scoreRate": _first_or_default(result.get("scoreRate", 0)),
                     "category": result.get("type", "Quantitative"),
                     "question": result.get("question", ""),
                     "answer": result.get("answer", ""),
