@@ -1,5 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
+from src.constants.perspectives import TEN_PERSPECTIVES, to_japanese_perspective
 from src.db.define_tables import EvaluationResult
 from src.manager.evaluation_results_manager import EvaluationResultsManager
 from src.db.session import get_db
@@ -307,3 +309,129 @@ def get_evaluation_result_detail(
         logger.exception(
             f"get_evaluation_result_detail: 詳細取得処理中にエラーが発生しました: {e}")
         raise HTTPException(status_code=500, detail="評価結果詳細の取得中にエラーが発生しました。")
+
+
+@router.get(
+    "/evaluation_results/{eval_result_id}/combined_detail", response_model=Dict[str, Any],
+)
+def get_combined_evaluation_detail(
+    eval_result_id: int,
+    score_filter: Optional[Literal["0", "1"]] = None,
+    target_language: TargetLanguage = TargetLanguage.japanese,
+    download: Optional[bool] = Query(False, description="Download as JSON file"),
+    db: Session = Depends(get_db),
+):
+    """
+    Get combined detailed information for the specified evaluation result ID,
+    including both quantitative and qualitative results, and return in a readable format.
+    If 'download' is true, return as a downloadable JSON file.
+    """
+    logger.info(
+        f"get_combined_evaluation_detail: ID={eval_result_id} の統合詳細取得処理を開始します。"
+    )
+
+    if score_filter is not None:
+        score_filter = int(score_filter)
+
+    try:
+        # Get basic evaluation result info
+        eval_result = db.query(EvaluationResult).filter_by(id=eval_result_id).first()
+        if eval_result is None:
+            logger.error(
+                "get_combined_evaluation_detail: EvaluationResultが見つかりません。"
+            )
+            raise HTTPException(status_code=404, detail="EvaluationResult not found")
+
+        # Get detailed results
+        detail_results = EvaluationResultsManager.get_result_detail(
+            db,
+            eval_result_id,
+            score_filter=score_filter,
+            target_language=target_language,
+        )
+
+        # Get 10-perspective scores
+        perspective_scores = EvaluationResultsManager.calculate_10perspective_scores(
+            db, eval_result_id
+        )
+
+        # Build the combined response
+        combined_response = {
+            "evaluationResultName": eval_result.name,
+            "evaluationName": (
+                eval_result.evaluation.name if eval_result.evaluation else None
+            ),
+            "evaluatedDate": (
+                eval_result.created_date.strftime("%Y-%m-%d %H:%M:%S")
+                if eval_result.created_date
+                else None
+            ),
+            "tenPerspectives": [],
+        }
+
+        normalized_detail_results = {}
+
+        for perspective_name, results in detail_results.items():
+            ja_name = to_japanese_perspective(perspective_name)
+            normalized_detail_results[ja_name] = results
+
+        # Convert detail results to the requested format
+        for item in TEN_PERSPECTIVES:
+            ja_name = item["ja"]
+            en_name = item["en"]
+
+            # Output language
+            perspective_name = (
+                ja_name if target_language == TargetLanguage.japanese else en_name
+            )
+
+            perspective_score = perspective_scores.get(ja_name, 0)
+
+            results = normalized_detail_results.get(ja_name, [])
+
+            perspective_data = {
+                "perspective": perspective_name,
+                "totalScore": perspective_score,
+                "results": [],
+            }
+
+            for result in results:
+                result_data = {
+                    "subCategory": result.get("secondGoal", [""])[0],
+                    "evaluationContent": result.get("gsnLeaf", [""])[0],
+                    "scoreRate": result.get("scoreRate", [0])[0],
+                    "category": result.get("type", "Quantitative"),
+                    "question": result.get("question", ""),
+                    "answer": result.get("answer", ""),
+                    "score": result.get("score", 0),
+                }
+
+                perspective_data["results"].append(result_data)
+
+            combined_response["tenPerspectives"].append(perspective_data)
+
+        logger.info("get_combined_evaluation_detail: 統合詳細取得が完了しました。")
+
+        # Return as downloadable JSON if requested
+        if download:
+            return JSONResponse(
+                content=combined_response,
+                headers={
+                    "Content-Disposition": f"attachment; filename=evaluation_result_{eval_result_id}_detail.json"
+                },
+            )
+
+        return combined_response
+
+    except ValueError:
+        logger.exception(
+            "get_combined_evaluation_detail: EvaluationResultが見つかりません。"
+        )
+        raise HTTPException(status_code=404, detail="EvaluationResult not found")
+    except Exception as e:
+        logger.exception(
+            f"get_combined_evaluation_detail: 統合詳細取得処理中にエラーが発生しました: {e}"
+        )
+        raise HTTPException(
+            status_code=500, detail="評価結果統合詳細の取得中にエラーが発生しました。"
+        )
