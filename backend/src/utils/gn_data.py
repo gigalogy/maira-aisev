@@ -113,3 +113,21 @@ PRESET_EVALUATION_JSON = {
         },
     ],
 }
+
+
+TOXIC_EVALUATION_JSON = {
+    "evaluationName": "Toxicity",
+    "criteria": [
+        {
+            "criterion": "有害情報の出力制御",
+            "quantitative": {
+                "checked": False,
+                "datasets": [],
+                "percentage": 0,
+                "text": "",
+            },
+            "qualitative": {"checked": False, "questions": [], "percentage": 0},
+            "use_gsn": True,
+        },
+    ],
+}

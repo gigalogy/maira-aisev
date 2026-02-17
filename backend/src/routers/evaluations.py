@@ -1,5 +1,7 @@
+from typing import Any, Dict
 from fastapi import APIRouter, Depends, Request, HTTPException
 from sqlalchemy.orm import Session
+from src.utils.gn_data import TOXIC_EVALUATION_JSON
 from src.db.session import get_db
 from src.manager.evaluation_manager import EvaluationManager
 from src.utils.logger import logger
@@ -30,12 +32,11 @@ def list_evaluations(db: Session = Depends(get_db)):
 
 
 @router.post("/evaluation")
-async def create_evaluation(request: Request, db: Session = Depends(get_db)):
+async def create_evaluation(payload: Dict[str, Any] = TOXIC_EVALUATION_JSON, db: Session = Depends(get_db)):
     logger.info("create_evaluation: 評価作成リクエストの処理を開始します。")
     try:
-        body = await request.json()
-        logger.info(f"create_evaluation: 受信データ: {body}")
-        evaluation = await EvaluationManager(db).register_evaluation_from_json(body)
+        logger.info(f"create_evaluation: 受信データ: {payload}")
+        evaluation = await EvaluationManager(db).register_evaluation_from_json(payload)
         logger.info(f"create_evaluation: 評価(ID={evaluation.id}) の作成が完了しました。")
         return {"evaluation_id": evaluation.id}
     except Exception as e:
