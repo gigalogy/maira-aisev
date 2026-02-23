@@ -177,6 +177,24 @@ def exec_quantitative_evaluation(
         - evaluation_id, target_ai_model_id, evaluator_ai_model_id (IDs)
         - evaluation_id, target_model, evaluator_model (inline configs)
     """
+    headers = {
+        "project-id": request.maira_project_id if request.maira_project_id else "",
+        "auth-token": request.maira_auth_token if request.maira_auth_token else "",
+        "accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    response_body, status = request_processor(
+        host=app_config.maira_api_hostname,
+        port=app_config.maira_api_port,
+        method="GET",
+        url="/v1/gpt/profiles",
+        headers=headers,
+        payload=None,
+    )
+    data = json.loads(response_body)
+    if status == 401:
+        raise HTTPException(status_code=status, detail=f"{data.get("detail", {}).get("response", "Failed to fetch GPT profiles from Maira")}")
+
     evaluation = (
         db.query(Evaluation)
         .order_by(Evaluation.id.asc())
@@ -190,14 +208,7 @@ def exec_quantitative_evaluation(
     
     target_model_name = f"{target_model.get('name', '')}/{target_model.get('model_name', '')}" if target_model else None
     evaluator_model_name = f"{evaluator_model.get('name', '')}/{evaluator_model.get('model_name', '')}" if evaluator_model else None
-    
-    headers = {
-        "project-id": request.maira_project_id if request.maira_project_id else "",
-        "auth-token": request.maira_auth_token if request.maira_auth_token else "",
-        "accept": "application/json",
-        "Content-Type": "application/json",
-    }
-    
+
     eval_result = EvaluationResult(
         name=request.name,
         evaluation_id=evaluation.id,
@@ -212,18 +223,6 @@ def exec_quantitative_evaluation(
         qualitative_results=request.qualitative_results
     )
     try:
-        response_body, status = request_processor(
-            host=app_config.maira_api_hostname,
-            port=app_config.maira_api_port,
-            method="GET",
-            url="/v1/gpt/profiles",
-            headers=headers,
-            payload=None,
-        )
-        data = json.loads(response_body)
-        if status == 401:
-            raise HTTPException(status_code=status, detail=f"{data.get("detail", {}).get("response", "Failed to fetch GPT profiles from Maira")}")
-
         eval_result_id = EvaluationResultsManager.create_evaluation_result(
             db, eval_result)
         if not eval_result_id:
@@ -246,7 +245,6 @@ def exec_quantitative_evaluation(
 
         background_tasks.add_task(
             EvaluationResultsManager.register_quantitative_result,
-            db,
             eval_result_id,
             dataset_ids,
             request.target_ai_model_id,
