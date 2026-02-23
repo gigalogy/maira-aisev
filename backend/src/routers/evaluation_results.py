@@ -200,7 +200,7 @@ def exec_quantitative_evaluation(
     
     eval_result = EvaluationResult(
         name=request.name,
-        evaluation_id=2,
+        evaluation_id=evaluation.id,
         maira_project_id=request.maira_project_id,
         maira_profile_id=target_model.get("api_request_format", {}).get("gpt_profile_id") if target_model else None,
         target_model_name=target_model_name,
@@ -233,11 +233,11 @@ def exec_quantitative_evaluation(
             f"create_evaluation_result: 評価結果(ID={eval_result_id}) の作成が完了しました。")
 
         dataset_ids = EvaluationResultsManager.get_dataset_ids_from_evaluation_id(
-            db, 2)
+            db, evaluation.id)
 
         # Search for UseGSN by evaluation_id
         use_gsn = EvaluationResultsManager.get_gsn_by_evaluation_id(
-            db, 2)
+            db, evaluation.id)
         logger.info(f"exec_quantitative_evaluation: UseGSN={use_gsn}")
         if not dataset_ids and not use_gsn:
             logger.info("exec_quantitative_evaluation: データセットが見つかりませんでした。")
