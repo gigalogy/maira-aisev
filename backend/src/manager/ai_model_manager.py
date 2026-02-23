@@ -127,4 +127,3 @@ class AIModelManager:
             logger.error(f"delete_model: 削除処理中にエラーが発生しました: {e}")
             db.rollback()
             return False
-            

@@ -1,18 +1,31 @@
+import uuid
 from datetime import date, datetime
 import importlib.util
 from pathlib import Path
+from typing import Literal, Optional
+
+from fastapi import HTTPException
+from src.constants.perspectives import normalize_perspective_sequence
+from src.enum import TargetLanguage, TargetModel, EvalModel
 from src.db.define_tables import EvaluationResult, Dataset, AIModel, Evaluation, AIModel, UseGSN
 from sqlalchemy.orm import Session
+from sqlalchemy import and_, func
 from src.utils.logger import logger
 from src.gsn.register_dataset_for_gsn import RegisterDatasetForGSN
 from src.manager.quantitative_dataset_manager import QuantitativeDatasetService
 from src.manager.dataset_manager import DatasetManager
 import pandas as pd
+from src.config import config as app_config
+from src.helper import InvalidEvaluationConfiguration
 
 
 class EvaluationResultsManager:
     @staticmethod
-    def get_all_evaluation_results(db: Session) -> list[EvaluationResult]:
+    def get_all_evaluation_results(
+        db: Session,
+        maira_project_id: Optional[str] = None,
+        maira_profile_id: Optional[str] = None,
+    ) -> list[EvaluationResult]:
         """
         Get all EvaluationResults
         evaluation_id -> Join with Evaluation to get name
@@ -24,19 +37,40 @@ class EvaluationResultsManager:
         TargetAIModel = aliased(AIModel)
         EvaluatorAIModel = aliased(AIModel)
         try:
-            evaluation_results = db.query(EvaluationResult).\
-                join(EvaluationResult.evaluation).\
-                join(TargetAIModel, TargetAIModel.id == EvaluationResult.target_ai_model_id).\
-                join(EvaluatorAIModel, EvaluatorAIModel.id ==
-                     EvaluationResult.evaluator_ai_model_id).all()
+            query = (
+                db.query(EvaluationResult)
+                .join(EvaluationResult.evaluation)
+                # .join(
+                #     TargetAIModel,
+                #     TargetAIModel.id == EvaluationResult.target_ai_model_id,
+                # )
+                # .join(
+                #     EvaluatorAIModel,
+                #     EvaluatorAIModel.id == EvaluationResult.evaluator_ai_model_id,
+                # )
+            )
+
+            filters = []
+
+            if maira_project_id is not None:
+                filters.append(EvaluationResult.maira_project_id == maira_project_id)
+            if maira_profile_id is not None:
+                filters.append(EvaluationResult.maira_profile_id == maira_profile_id)
+
+            if filters:
+                query = query.filter(and_(*filters))
+
+            evaluation_results = query.all()
 
             required_response = [{
                 "id": result.id,
                 "name": result.name,
                 "created_date": result.created_date,
                 "evaluation_name": result.evaluation.name,
-                "target_ai_model_name": result.target_ai_model.name,
-                "evaluator_ai_model_name": result.evaluator_ai_model.name,
+                "maira_project_id": result.maira_project_id,
+                "maira_profile_id": result.maira_profile_id,
+                # "target_ai_model_name": result.target_ai_model.name,
+                # "evaluator_ai_model_name": result.evaluator_ai_model.name,
                 "quantitative_results": result.quantitative_results,
                 "qualitative_results": result.qualitative_results,
                 "quantitative_eval_state": result.quantitative_eval_state
@@ -174,160 +208,253 @@ class EvaluationResultsManager:
             return scorer_provider.get_graded_qa_scorer(model=model, prompt=prompt, grade_pattern=grade_pattern)
 
     @staticmethod
-    def register_quantitative_result(db: Session, eval_result_id: int, dataset_ids: list[int], target_model_id: int, eval_model_id: int, use_gsn: UseGSN | None = None) -> int:
+    def get_api_key(model):
+        """Return the model's API key, falling back to global key if OpenAI."""
+        if model.name == EvalModel.openai.value:
+            return model.api_key or app_config.openai_api_key
+        return model.api_key
+
+    @staticmethod
+    def register_quantitative_result(
+        eval_result_id: int, 
+        dataset_ids: list[int], 
+        target_model_id: int | None, 
+        eval_model_id: int | None, 
+        use_gsn: UseGSN | None = None,
+        maira_project_id: Optional[str] = None,
+        maira_auth_token: Optional[str] = None,
+        target_model_config: dict | None = None,
+        eval_model_config: dict | None = None,
+    ) -> int:
         """
-        Execute quantitative evaluation by specifying dataset ID and model ID, and register the results to evaluation_result
+        Execute quantitative evaluation by specifying dataset ID and model ID/config, and register the results to evaluation_result
         """
         logger.info(
             f"register_quantitative_result: ID={eval_result_id} の定量評価登録を開始します。")
         from src.inspect.eval_datasets import new_eval_by_ten_perspective
         from src.inspect.inspect_common import register_in_inspect_ai
+        from src.inspect.inspect_maira import register_in_inspect_maira_ai
         import pickle
         from inspect_ai.scorer import model_graded_qa
         from src.manager.dataset_manager import DatasetManager
         from src.db.define_tables import AIModel, EvaluationResult, DatasetCustomMapping
+        from src.enum import TargetModel, EvalModel
+        from src.db.session import get_session
 
         logger.info("Call: register_quantitative_result")
-
-        eval_result = db.query(EvaluationResult).filter_by(
-            id=eval_result_id).first()
-        if not eval_result:
-            raise ValueError("EvaluationResult not found")
-
-        evaluation = eval_result.evaluation
-        if not evaluation:
-            raise ValueError("Evaluation not found")
-
-        custom_datasets = evaluation.custom_dataset
-        if not custom_datasets:
-            raise ValueError("CustomDatasets not found")
-
-        mappings = db.query(DatasetCustomMapping).filter_by(
-            custom_datasets_id=custom_datasets.id).all()
-        # return mappings
-
-        prompt = mappings[0].prompt if mappings else None
-        logger.info(f"FIXME: register_quantitative_result: prompt: {prompt}")
-
-
-        # Get from DB
-        eval_result = db.query(EvaluationResult).filter_by(
-            id=eval_result_id).first()
-        if eval_result is None:
-            logger.error(
-                "register_quantitative_result: EvaluationResultが見つかりません。")
-            raise ValueError("EvaluationResult not found")
-
-        logger.info(f"dataset_ids: {dataset_ids}")
-
-        datasets = DatasetManager.get_by_ids_and_type(
-            db, dataset_ids, "quantitative")
-        if not datasets:
-            logger.warning(
-                f"register_quantitative_result: No valid datasets found for IDs: {dataset_ids}")
-
-            eval_result.quantitative_eval_state = "done"
-            db.commit()
-            return eval_result.id
-
-        target_model = db.query(AIModel).filter_by(id=target_model_id).first()
-        if target_model is None:
-            logger.error(
-                "register_quantitative_result: Target AIModelが見つかりません。")
-            raise ValueError("Target AIModel not found")
-
-        eval_model = db.query(AIModel).filter_by(id=eval_model_id).first()
-        if eval_model is None:
-            logger.error(
-                "register_quantitative_result: Evaluation AIModelが見つかりません。")
-            raise ValueError("Evaluation AIModel not found")
-
-        # Dataset data_content is binary serialized with pickle, so load it to get DataFrame
-        # TODO: Currently only df with text is allowed, but multimodal support is planned for the future
-        dfs = []
-        for dataset in datasets:
+        with get_session() as db:
             try:
-                df = pickle.loads(dataset.data_content)
-                dfs.append(df)
+                eval_result = db.query(EvaluationResult).filter_by(
+                    id=eval_result_id).first()
+                if not eval_result:
+                    raise ValueError("EvaluationResult not found")
+
+                evaluation = eval_result.evaluation
+                if not evaluation:
+                    raise ValueError("Evaluation not found")
+
+                custom_datasets = evaluation.custom_dataset
+                if not custom_datasets:
+                    raise ValueError("CustomDatasets not found")
+
+                mappings = db.query(DatasetCustomMapping).filter_by(
+                    custom_datasets_id=custom_datasets.id).all()
+                # return mappings
+
+                prompt = mappings[0].prompt if mappings else None
+                logger.info(f"FIXME: register_quantitative_result: prompt: {prompt}")
+
+
+                # Get from DB
+                eval_result = db.query(EvaluationResult).filter_by(
+                    id=eval_result_id).first()
+                if eval_result is None:
+                    logger.error(
+                        "register_quantitative_result: EvaluationResultが見つかりません。")
+                    raise ValueError("EvaluationResult not found")
+
+                logger.info(f"dataset_ids: {dataset_ids}")
+
+                datasets = DatasetManager.get_by_ids_and_type(
+                    db, dataset_ids, "quantitative")
+                if not datasets:
+                    logger.warning(
+                        f"register_quantitative_result: No valid datasets found for IDs: {dataset_ids}")
+
+                    eval_result.quantitative_eval_state = "failed"
+                    db.commit()
+                    raise ValueError("No valid datasets found")
+
+                # Resolve target model: use inline config if provided, else fetch by ID
+                if target_model_config:
+                    # Use inline config and merge runtime keys
+                    class InlineAIModel:
+                        def __init__(self, cfg, api_key=None):
+                            self.name = cfg.get('name')
+                            self.model_name = cfg.get('model_name')
+                            self.url = cfg.get('url')
+                            self.api_key = cfg.get('api_key') or api_key
+                            self.api_request_format = cfg.get('api_request_format', {})
+                    target_model = InlineAIModel(target_model_config)
+                else:
+                    # Fetch from DB by ID
+                    target_model = db.query(AIModel).filter_by(id=target_model_id).first()
+                    if target_model is None:
+                        logger.error(
+                            "register_quantitative_result: Target AIModelが見つかりません。")
+                        raise ValueError("Target AIModel not found")
+
+                # Resolve evaluator model: use inline config if provided, else fetch by ID
+                if eval_model_config:
+                    # Use inline config and merge runtime keys
+                    class InlineAIModel:
+                        def __init__(self, cfg, api_key=None):
+                            self.name = cfg.get('name')
+                            self.model_name = cfg.get('model_name')
+                            self.url = cfg.get('url')
+                            self.api_key = cfg.get('api_key') or api_key
+                            self.api_request_format = cfg.get('api_request_format', {})
+                    eval_model = InlineAIModel(eval_model_config)
+                else:
+                    # Fetch from DB by ID
+                    eval_model = db.query(AIModel).filter_by(id=eval_model_id).first()
+                    if eval_model is None:
+                        logger.error(
+                            "register_quantitative_result: Evaluation AIModelが見つかりません。")
+                        raise ValueError("Evaluation AIModel not found")
+
+                # Dataset data_content is binary serialized with pickle, so load it to get DataFrame
+                # TODO: Currently only df with text is allowed, but multimodal support is planned for the future
+                dfs = []
+                for dataset in datasets:
+                    try:
+                        df = pickle.loads(dataset.data_content)
+                        dfs.append(df)
+                    except Exception as e:
+                        logger.error(
+                            f"register_quantitative_result: データセットのデシリアライズに失敗: {e}")
+                        continue
+                if not dfs:
+                    logger.error(
+                        "register_quantitative_result: No valid dataset content found")
+                    raise ValueError("No valid dataset content found")
+                logger.info(
+                    f"register_quantitative_result: データセットのカラム: {dfs[0].columns}")
+                df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
+
+                # NOTE: Scorer columns are fillna with model_graded_qa
+                df.fillna({"scorer": "model_graded_qa"}, inplace=True)
+
+                # add model to inspect_ai.
+                # NOTE: target_model is for answer generation, eval_model is for scoring
+                if target_model.name == TargetModel.maira.value:
+                    # Ensure api_request_format exists
+                    if not getattr(target_model, "api_request_format", None):
+                        target_model.api_request_format = {}
+
+                    model_profile_id = target_model.api_request_format.get("gpt_profile_id")
+                    result_profile_id = eval_result.maira_profile_id
+
+                    # If model config does not contain maira_profile_id → inject from eval_result
+                    if not model_profile_id:
+                        if not result_profile_id:
+                            raise InvalidEvaluationConfiguration("maira_profile_id is required but missing in both model config and evaluation result")
+
+                        target_model.api_request_format["gpt_profile_id"] = result_profile_id
+                    # If both exist but mismatch → error
+                    elif result_profile_id and model_profile_id != result_profile_id:
+                        raise InvalidEvaluationConfiguration(
+                            f"maira_profile_id mismatch: "
+                            f"evaluation_result={result_profile_id}, "
+                            f"model_config={model_profile_id}"
+                        )
+                    # maira
+                    target_model_alias = register_in_inspect_maira_ai(
+                        alias="maira",
+                        url=target_model.url,
+                        maira_project_id=maira_project_id,
+                        maira_auth_token=maira_auth_token,
+                        defaults=getattr(target_model, "api_request_format", {}),
+                    )
+                else:
+                    # Standard
+                    target_model_alias = register_in_inspect_ai(
+                        model_name=target_model.model_name,
+                        api_url=target_model.url,
+                        api_key=EvaluationResultsManager.get_api_key(target_model),
+                    )
+                target_model_name = f"{target_model_alias}/{target_model.model_name}"
+
+                if eval_model.name == EvalModel.maira.value:
+                    # maira
+                    eval_model_alias = register_in_inspect_maira_ai(
+                        alias="maira",
+                        url=eval_model.url,
+                        maira_project_id=maira_project_id,
+                        maira_auth_token=maira_auth_token,
+                        defaults=getattr(eval_model, "api_request_format", {}),
+                    )
+                else:
+                    # Standard
+                    eval_model_alias = register_in_inspect_ai(
+                        model_name=eval_model.model_name,
+                        api_url=eval_model.url,
+                        api_key=EvaluationResultsManager.get_api_key(eval_model),
+                    )
+                eval_model_name = f"{eval_model_alias}/{eval_model.model_name}"
+
+                logger.info(f"Target model: {target_model_name}")
+                logger.info(f"Evaluation model: {eval_model_name}")
+
+                # Check for scorer column presence and evaluate by splitting by scorer
+                results = {}
+                
+                if 'scorer' in df.columns:
+                    # If scorer column exists, split by scorer
+                    for scorer_name in df['scorer'].dropna().unique():
+                        scorer_df = df[df['scorer'] == scorer_name]
+                        if scorer_df.empty:
+                            continue
+                        logger.info(f"Processing scorer: {scorer_name}")
+                        scorer = EvaluationResultsManager.get_scorer(
+                            scorer_name, model=eval_model_name, prompt=prompt)
+
+                        # Determine eval_type
+                        if scorer_name == "multiple_choice" or scorer_name == "choice":
+                            eval_type = "multiple_choice_eval"
+                        elif scorer_name == "requirement":
+                            eval_type = "requirement_eval"
+                        else:
+                            eval_type = "default"
+
+                        scorer_results = new_eval_by_ten_perspective(
+                            scorer_df, target_model_name=target_model_name, scorer=scorer, eval_type=eval_type)
+                        # Merge results (overwrite if same perspective exists)
+                        for perspective, result in scorer_results.items():
+                            results[perspective] = result
+                else:
+                    # If no scorer column, use default scorer
+                    scorer = EvaluationResultsManager.get_scorer(
+                        "model_graded_qa", model=eval_model_name, prompt=prompt)
+                    results = new_eval_by_ten_perspective(
+                        df, target_model_name=target_model_name, scorer=scorer, eval_type="default")
+                eval_result.quantitative_results = results
+                db.commit()
+
+                # Update status
+                eval_result.quantitative_eval_state = "done"
+                db.commit()
+                logger.info(f"register_quantitative_result: 定量評価の登録が完了しました。")
+                return eval_result.id
             except Exception as e:
                 logger.error(
-                    f"register_quantitative_result: データセットのデシリアライズに失敗: {e}")
-                continue
-        if not dfs:
-            logger.error(
-                "register_quantitative_result: No valid dataset content found")
-            raise ValueError("No valid dataset content found")
-        logger.info(
-            f"register_quantitative_result: データセットのカラム: {dfs[0].columns}")
-        df = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
-
-        # NOTE: Scorer columns are fillna with model_graded_qa
-        df.fillna({"scorer": "model_graded_qa"}, inplace=True)
-
-        # add model to inspect_ai.
-        # NOTE: target_model is for answer generation, eval_model is for scoring
-        target_model_alias = register_in_inspect_ai(
-            model_name=target_model.model_name,
-            api_url=target_model.url,
-            api_key=target_model.api_key
-        )
-        target_model_name = f"{target_model_alias}/{target_model.model_name}"
-
-        eval_model_alias = register_in_inspect_ai(
-            model_name=eval_model.model_name,
-            api_url=eval_model.url,
-            api_key=eval_model.api_key
-        )
-        eval_model_name = f"{eval_model_alias}/{eval_model.model_name}"
-
-        logger.info(f"Target model: {target_model_name}")
-        logger.info(f"Evaluation model: {eval_model_name}")
-
-        # Check for scorer column presence and evaluate by splitting by scorer
-        results = {}
-        try:
-            if 'scorer' in df.columns:
-                # If scorer column exists, split by scorer
-                for scorer_name in df['scorer'].dropna().unique():
-                    scorer_df = df[df['scorer'] == scorer_name]
-                    if scorer_df.empty:
-                        continue
-                    logger.info(f"Processing scorer: {scorer_name}")
-                    scorer = EvaluationResultsManager.get_scorer(
-                        scorer_name, model=eval_model_name, prompt=prompt)
-
-                    # Determine eval_type
-                    if scorer_name == "multiple_choice" or scorer_name == "choice":
-                        eval_type = "multiple_choice_eval"
-                    elif scorer_name == "requirement":
-                        eval_type = "requirement_eval"
-                    else:
-                        eval_type = "default"
-
-                    scorer_results = new_eval_by_ten_perspective(
-                        scorer_df, target_model_name=target_model_name, scorer=scorer, eval_type=eval_type)
-                    # Merge results (overwrite if same perspective exists)
-                    for perspective, result in scorer_results.items():
-                        results[perspective] = result
-            else:
-                # If no scorer column, use default scorer
-                scorer = EvaluationResultsManager.get_scorer(
-                    "model_graded_qa", model=eval_model_name, prompt=prompt)
-                results = new_eval_by_ten_perspective(
-                    df, target_model_name=target_model_name, scorer=scorer, eval_type="default")
-            eval_result.quantitative_results = results
-            db.commit()
-
-            # Update status
-            eval_result.quantitative_eval_state = "done"
-            db.commit()
-            logger.info(f"register_quantitative_result: 定量評価の登録が完了しました。")
-            return eval_result.id
-        except Exception as e:
-            logger.error(
-                f"register_quantitative_result: 評価処理中にエラーが発生しました: {e}")
-            db.rollback()
-            raise
+                    f"register_quantitative_result: 評価処理中にエラーが発生しました: {e}")
+                db.rollback()
+                eval_result.quantitative_eval_state = "failed"
+                db.commit()
+                raise
+            finally:
+                db.close()
 
     @staticmethod
     def get_gsn_by_evaluation_id(db: Session, evaluation_id: int) -> UseGSN | None:
@@ -374,7 +501,7 @@ class EvaluationResultsManager:
         return dataset_ids
 
     @staticmethod
-    def get_result_detail(db: Session, eval_result_id: int) -> dict:
+    def get_result_detail(db: Session, eval_result_id: int, score_filter: Optional[Literal[0, 1]] = None, target_language: TargetLanguage = TargetLanguage.japanese) -> dict:
         """
         Get details of the specified evaluation result ID and return quantitative_results in an easy-to-view format.
         Also return the question and answer content of qualitative_results.
@@ -448,7 +575,7 @@ class EvaluationResultsManager:
                     if not gsn_perspectives:
                         choices = sample.get("output", {}).get("choices", [{}])
                         detail = {
-                            "perspective": [perspective],
+                            "perspective": normalize_perspective_sequence([perspective], target_language.value) if perspective else [perspective],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             "answer": (choices[0].get("message", {}).get("content", "") if choices else ""),
@@ -458,7 +585,10 @@ class EvaluationResultsManager:
                         }
                         if not choices:
                             logger.error(f"sample: {sample} の choices が空です。")
-                        details.append(detail)
+                        if score_filter is None:
+                            details.append(detail)
+                        elif detail["score"] == score_filter:
+                            details.append(detail)
 
                     # NOTE: gsn route
                     # Process each GSN perspective for this sample
@@ -479,7 +609,7 @@ class EvaluationResultsManager:
                             "gsnLeaf": [gsn_detail.gsn_leaf if gsn_detail else None],
                             "scoreRate": [gsn_detail.score_rate if gsn_detail else 1.0],
                             "gsnName": [gsn_id],
-                            "perspective": [perspective],
+                            "perspective": normalize_perspective_sequence([perspective], target_language.value) if perspective else [perspective],
                             "type": "quantitative",
                             "question": sample.get("input", ""),
                             # "answer": (sample.get("output", {}).get("choices", [{}])[0].get("message", {}).get("content", "") if sample.get("output") else ""),
@@ -490,8 +620,14 @@ class EvaluationResultsManager:
                         }
                         if not choices:
                             logger.error(f"sample: {sample} の choices が空です。")
-                        details.append(detail)
-                perspective_map.setdefault(perspective, []).append(details)
+                        if score_filter is None:
+                            details.append(detail)
+                        elif detail["score"] == score_filter:
+                            details.append(detail)
+                normalized_perspective = normalize_perspective_sequence(
+                    [perspective], target_language.value
+                )[0] if perspective else None
+                perspective_map.setdefault(normalized_perspective, []).extend(details)
 
         # Qualitative evaluation (qualitative_results)
         answer_score_map = {

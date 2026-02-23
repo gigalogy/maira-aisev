@@ -110,10 +110,14 @@ class EvaluationResult(Base):
     __tablename__ = "evaluation_result"
     id = Column(Integer, primary_key=True)
     name = Column(String)
+    maira_project_id = Column(String, nullable=True)
+    maira_profile_id = Column(String, nullable=True)
     created_date = Column(DateTime)
     evaluation_id = Column(Integer, ForeignKey("evaluation.id"))
-    target_ai_model_id = Column(Integer, ForeignKey("ai_model.id"))
-    evaluator_ai_model_id = Column(Integer, ForeignKey("ai_model.id"))
+    target_model_name = Column(String, nullable=True)
+    evaluator_model_name = Column(String, nullable=True)
+    target_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
+    evaluator_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
     quantitative_results = Column(JSON)
     qualitative_results = Column(JSON)
     quantitative_eval_state = Column(String)  # "running", "done", etc.
@@ -149,7 +153,19 @@ class InitialDataMigrator():
 
     def initialize_10_perspective(self):
 
-        for n in TEN_PERSPECTIVES_JA[:10]:
+        perspectives = [
+            "有害情報の出力制御",
+            "偽誤情報の出力・誘導の防止",
+            "公平性と包摂性",
+            "ハイリスク利用・目的外利用への対処",
+            "プライバシー保護",
+            "セキュリティ確保",
+            "説明可能性",
+            "ロバスト性",
+            "データ品質",
+            "検証可能性"
+        ]
+        for n in perspectives[:10]:
             self.session.add(EvaluationPerspective(perspective_name=n))
         self.session.commit()
 
