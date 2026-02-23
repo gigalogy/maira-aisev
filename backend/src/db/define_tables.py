@@ -114,6 +114,8 @@ class EvaluationResult(Base):
     maira_profile_id = Column(String, nullable=True)
     created_date = Column(DateTime)
     evaluation_id = Column(Integer, ForeignKey("evaluation.id"))
+    target_model_name = Column(String, nullable=True)
+    evaluator_model_name = Column(String, nullable=True)
     target_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
     evaluator_ai_model_id = Column(Integer, ForeignKey("ai_model.id"), nullable=True)
     quantitative_results = Column(JSON)

@@ -280,9 +280,9 @@ class EvaluationResultsManager:
             logger.warning(
                 f"register_quantitative_result: No valid datasets found for IDs: {dataset_ids}")
 
-            eval_result.quantitative_eval_state = "done"
+            eval_result.quantitative_eval_state = "failed"
             db.commit()
-            return eval_result.id
+            raise ValueError("No valid datasets found")
 
         # Resolve target model: use inline config if provided, else fetch by ID
         if target_model_config:
@@ -449,6 +449,8 @@ class EvaluationResultsManager:
             logger.error(
                 f"register_quantitative_result: 評価処理中にエラーが発生しました: {e}")
             db.rollback()
+            eval_result.quantitative_eval_state = "failed"
+            db.commit()
             raise
 
     @staticmethod
