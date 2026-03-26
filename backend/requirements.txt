@@ -12,6 +12,6 @@ datasets==4.0.0
 python-multipart==0.0.20
 pytest-html==4.1.1
 py==1.11.0
-requests==2.32.4
+requests==2.33.0
 pg8000==1.31.4
 
