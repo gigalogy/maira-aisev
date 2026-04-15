@@ -9,7 +9,7 @@ dotenv==0.9.9
 pytest-asyncio==1.0.0
 openai==1.82.0
 datasets==4.0.0
-python-multipart==0.0.20
+python-multipart==0.0.26
 pytest-html==4.1.1
 py==1.11.0
 requests==2.32.4
