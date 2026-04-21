@@ -7,7 +7,7 @@ starlette==0.46.1
 
 # LLM Client Libraries
 openai==1.69.0
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 aiohttp==3.11.16
 
 # Document Processing
